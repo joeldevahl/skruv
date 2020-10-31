@@ -1,0 +1,7 @@
+[package]
+name = "skruv"
+version = "0.1.0"
+authors = ["Joel de Vahl <joel@devahl.com>"]
+edition = "2018"
+
+[dependencies]
