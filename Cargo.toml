@@ -2,6 +2,8 @@
 name = "skruv"
 version = "0.1.0"
 authors = ["Joel de Vahl <joel@devahl.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
+winit = "0.26.1"
+rusty-d3d12 = "0.4.1"
