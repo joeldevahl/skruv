@@ -19,7 +19,7 @@ const ASPECT_RATIO: f32 = WINDOW_WIDTH as f32 / WINDOW_HEIGHT as f32;
 
 const FRAMES_IN_FLIGHT: u32 = 3;
 
-struct SkruvMain {
+struct Renderer {
     device: rusty_d3d12::Device,
     command_queue: rusty_d3d12::CommandQueue,
     fence: rusty_d3d12::Fence,
@@ -39,7 +39,7 @@ struct SkruvMain {
     depth_stencil: Option<rusty_d3d12::Resource>,
 }
 
-impl SkruvMain {
+impl Renderer {
     fn new(hwnd: *mut std::ffi::c_void) -> Self {
         let mut factory_flags = rusty_d3d12::CreateFactoryFlags::None;
         let factory = rusty_d3d12::Factory::new(factory_flags).expect("Cannot create factory");
@@ -253,6 +253,49 @@ impl SkruvMain {
 
         self.frame_count += 1;
     }
+
+    fn sort(&self, graph: &Graph) -> Vec<usize> {
+        let mut local_edges = graph.edges.clone();
+        let mut exec_order = Vec::<usize>::new();
+        let mut entry_nodes = Vec::<usize>::new();
+
+        for (id, _node) in graph.nodes.iter().enumerate() {
+            let num_deps = local_edges.iter().filter(|e| e.1 == id).count();
+            if num_deps == 0 {
+                entry_nodes.push(id);
+            }
+        }
+
+        while !entry_nodes.is_empty() {
+            let id = entry_nodes.pop().unwrap();
+            exec_order.push(id);
+
+            let depending_nodes = local_edges
+                .iter()
+                .filter(|e| e.0 == id)
+                .map(|e| e.1).collect::<Vec<usize>>();
+            for dep_id in depending_nodes {
+                local_edges.retain(|e| e.1 != dep_id);
+                let num_deps = local_edges.iter().filter(|e| e.1 == dep_id).count();
+                if num_deps == 0 {
+                    entry_nodes.push(dep_id);
+                }
+            }
+        }
+
+        exec_order
+    }
+
+    pub fn execute(&mut self, graph: &Graph) {
+        let exec_order = self.sort(graph);
+
+        for id in exec_order {
+            let node = &graph.nodes[id];
+            node.execute();
+        }
+
+        self.draw();
+    }
 }
 
 trait Node {
@@ -299,64 +342,7 @@ impl Graph {
     }
 }
 
-struct Renderer {}
-
-impl Renderer {
-    fn sort(&self, graph: &Graph) -> Vec<usize> {
-        let mut local_edges = graph.edges.clone();
-        let mut exec_order = Vec::<usize>::new();
-        let mut entry_nodes = Vec::<usize>::new();
-
-        for (id, _node) in graph.nodes.iter().enumerate() {
-            let num_deps = local_edges.iter().filter(|e| e.1 == id).count();
-            if num_deps == 0 {
-                entry_nodes.push(id);
-            }
-        }
-
-        while !entry_nodes.is_empty() {
-            let id = entry_nodes.pop().unwrap();
-            exec_order.push(id);
-
-            let depending_nodes = local_edges
-                .iter()
-                .filter(|e| e.0 == id)
-                .map(|e| e.1).collect::<Vec<usize>>();
-            for dep_id in depending_nodes {
-                local_edges.retain(|e| e.1 != dep_id);
-                let num_deps = local_edges.iter().filter(|e| e.1 == dep_id).count();
-                if num_deps == 0 {
-                    entry_nodes.push(dep_id);
-                }
-            }
-        }
-
-        exec_order
-    }
-
-    pub fn execute(&self, graph: &Graph) {
-        let exec_order = self.sort(graph);
-
-        for id in exec_order {
-            let node = &graph.nodes[id];
-            node.execute();
-        }
-    }
-}
-
 fn main() {
-    let renderer = Renderer {};
-
-    let mut graph = Graph::new();
-
-    let node1 = Box::new(DrawNode {});
-    let node2 = Box::new(PresentNode {});
-
-    let node1_id = graph.add(node1, &[]);
-    let _node2_id = graph.add(node2, &[node1_id]);
-
-    renderer.execute(&graph);
-
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .build(&event_loop)
@@ -366,9 +352,15 @@ fn main() {
         WINDOW_HEIGHT,
     ));
 
-    let mut skruv_main = SkruvMain::new(
-        window.hwnd(),
-    );
+    let mut renderer = Renderer::new(window.hwnd());
+
+    let mut graph = Graph::new();
+
+    let node1 = Box::new(DrawNode {});
+    let node2 = Box::new(PresentNode {});
+
+    let node1_id = graph.add(node1, &[]);
+    let _node2_id = graph.add(node2, &[node1_id]);
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
@@ -381,7 +373,7 @@ fn main() {
                 window.request_redraw();
             }
             Event::RedrawRequested(_) => {
-                skruv_main.draw();
+                renderer.execute(&graph);
             }
             _ => (),
         }
