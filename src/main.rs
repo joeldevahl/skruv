@@ -161,13 +161,63 @@ impl Renderer {
         skruv_main
     }
 
-    fn populate_command_list(&mut self, frame_index: usize) {
-        self.command_allocators[frame_index]
+    fn sort(&self, graph: &Graph) -> Vec<usize> {
+        let mut local_edges = graph.edges.clone();
+        let mut exec_order = Vec::<usize>::new();
+        let mut entry_nodes = Vec::<usize>::new();
+
+        for (id, _node) in graph.nodes.iter().enumerate() {
+            let num_deps = local_edges.iter().filter(|e| e.1 == id).count();
+            if num_deps == 0 {
+                entry_nodes.push(id);
+            }
+        }
+
+        while !entry_nodes.is_empty() {
+            let id = entry_nodes.pop().unwrap();
+            exec_order.push(id);
+
+            let depending_nodes = local_edges
+                .iter()
+                .filter(|e| e.0 == id)
+                .map(|e| e.1).collect::<Vec<usize>>();
+            for dep_id in depending_nodes {
+                local_edges.retain(|e| e.1 != dep_id);
+                let num_deps = local_edges.iter().filter(|e| e.1 == dep_id).count();
+                if num_deps == 0 {
+                    entry_nodes.push(dep_id);
+                }
+            }
+        }
+
+        exec_order
+    }
+
+    pub fn execute(&mut self, graph: &Graph) {
+        let exec_order = self.sort(graph);
+
+        let last_fence_value = self.fence_values[self.frame_index];
+        let fence_completed_value = self.fence.get_completed_value();
+
+        if fence_completed_value < last_fence_value {
+            self.fence
+                .set_event_on_completion(last_fence_value, &self.fence_event)
+                .expect("Cannot set event on fence");
+
+            self.fence_event.wait(None);
+        }
+
+        for id in exec_order {
+            let node = &graph.nodes[id];
+            node.execute();
+        }
+
+        self.command_allocators[self.frame_index]
             .reset()
             .expect("Cannot reset command allocator");
 
         self.command_list
-            .reset(&self.command_allocators[frame_index], None)
+            .reset(&self.command_allocators[self.frame_index], None)
             .expect("Cannot reset command list");
 
         self.command_list.set_viewports(&[self.viewport_desc]);
@@ -219,21 +269,6 @@ impl Renderer {
         self.command_list
             .close()
             .expect("Cannot close command list");
-    }
-
-    fn draw(&mut self) {
-        let last_fence_value = self.fence_values[self.frame_index];
-        let fence_completed_value = self.fence.get_completed_value();
-
-        if fence_completed_value < last_fence_value {
-            self.fence
-                .set_event_on_completion(last_fence_value, &self.fence_event)
-                .expect("Cannot set event on fence");
-
-            self.fence_event.wait(None);
-        }
-
-        self.populate_command_list(self.frame_index);
 
         self.command_queue.execute_command_lists(std::slice::from_ref(&self.command_list));
 
@@ -252,49 +287,7 @@ impl Renderer {
         self.fence_values[self.frame_index as usize] = last_fence_value + 1;
 
         self.frame_count += 1;
-    }
 
-    fn sort(&self, graph: &Graph) -> Vec<usize> {
-        let mut local_edges = graph.edges.clone();
-        let mut exec_order = Vec::<usize>::new();
-        let mut entry_nodes = Vec::<usize>::new();
-
-        for (id, _node) in graph.nodes.iter().enumerate() {
-            let num_deps = local_edges.iter().filter(|e| e.1 == id).count();
-            if num_deps == 0 {
-                entry_nodes.push(id);
-            }
-        }
-
-        while !entry_nodes.is_empty() {
-            let id = entry_nodes.pop().unwrap();
-            exec_order.push(id);
-
-            let depending_nodes = local_edges
-                .iter()
-                .filter(|e| e.0 == id)
-                .map(|e| e.1).collect::<Vec<usize>>();
-            for dep_id in depending_nodes {
-                local_edges.retain(|e| e.1 != dep_id);
-                let num_deps = local_edges.iter().filter(|e| e.1 == dep_id).count();
-                if num_deps == 0 {
-                    entry_nodes.push(dep_id);
-                }
-            }
-        }
-
-        exec_order
-    }
-
-    pub fn execute(&mut self, graph: &Graph) {
-        let exec_order = self.sort(graph);
-
-        for id in exec_order {
-            let node = &graph.nodes[id];
-            node.execute();
-        }
-
-        self.draw();
     }
 }
 
