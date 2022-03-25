@@ -1,14 +1,13 @@
 use crate::graph::*;
+use winit;
+use winit::platform::windows::WindowExtWindows;
+use rusty_d3d12::*;
 
 #[no_mangle]
 pub static D3D12SDKVersion: u32 = 600;
 
 #[no_mangle]
 pub static D3D12SDKPath: &[u8; 9] = b".\\D3D12\\\0";
-
-pub const WINDOW_WIDTH: u32 = 640;
-pub const WINDOW_HEIGHT: u32 = 480;
-pub const ASPECT_RATIO: f32 = WINDOW_WIDTH as f32 / WINDOW_HEIGHT as f32;
 
 pub const FRAMES_IN_FLIGHT: u32 = 3;
 
@@ -33,7 +32,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(hwnd: *mut std::ffi::c_void) -> Self {
+    pub fn new(window: &winit::window::Window) -> Self {
         let mut factory_flags = rusty_d3d12::CreateFactoryFlags::None;
         let factory = rusty_d3d12::Factory::new(factory_flags).expect("Cannot create factory");
 
@@ -55,24 +54,26 @@ impl Renderer {
         let fence_values = [0; FRAMES_IN_FLIGHT as usize];
         let frame_index = 0;
 
+        let window_size = window.inner_size();
+
         let swapchain_desc = rusty_d3d12::SwapchainDesc::default()
-            .set_width(WINDOW_WIDTH)
-            .set_height(WINDOW_HEIGHT)
+            .set_width(window_size.width)
+            .set_height(window_size.height)
             .set_buffer_count(u32::from(FRAMES_IN_FLIGHT));
         let swapchain = factory
-            .create_swapchain(&command_queue, hwnd as *mut rusty_d3d12::HWND__, &swapchain_desc)
+            .create_swapchain(&command_queue, window.hwnd() as *mut rusty_d3d12::HWND__, &swapchain_desc)
             .expect("Cannot create swapchain");
         factory
-            .make_window_association(hwnd, rusty_d3d12::MakeWindowAssociationFlags::NoAltEnter)
+            .make_window_association(window.hwnd(), rusty_d3d12::MakeWindowAssociationFlags::NoAltEnter)
             .expect("Cannot make window association");
 
         let viewport_desc = rusty_d3d12::Viewport::default()
-            .set_width(WINDOW_WIDTH as f32)
-            .set_height(WINDOW_HEIGHT as f32);
+            .set_width(window_size.width as f32)
+            .set_height(window_size.height as f32);
 
         let scissor_desc = rusty_d3d12::Rect::default()
-            .set_right(WINDOW_WIDTH as i32)
-            .set_bottom(WINDOW_HEIGHT as i32);
+            .set_right(window_size.width as i32)
+            .set_bottom(window_size.height as i32);
 
         let rtv_descriptor_handle_size = device
             .get_descriptor_handle_increment_size(rusty_d3d12::DescriptorHeapType::Rtv);

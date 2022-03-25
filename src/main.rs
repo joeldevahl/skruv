@@ -13,6 +13,9 @@ use winit::{
     window::WindowBuilder,
 };
 
+const WINDOW_WIDTH: u32 = 640;
+const WINDOW_HEIGHT: u32 = 480;
+
 
 fn main() {
     let event_loop = EventLoop::new();
@@ -24,7 +27,7 @@ fn main() {
         WINDOW_HEIGHT,
     ));
 
-    let mut renderer = Renderer::new(window.hwnd());
+    let mut renderer = Renderer::new(&window);
 
     let mut graph = Graph::new();
 
